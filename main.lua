@@ -4,7 +4,6 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 local LocalPlayer = Players.LocalPlayer or Players:GetPlayers()[1]
-
 if not LocalPlayer then warn("❌ LocalPlayer не найден"); return end
 
 local MATERIALS = {
@@ -12,13 +11,11 @@ local MATERIALS = {
     "Sand", "Wood", "Wooden Planks", "Foil", "Metal", "Brick",
     "Concrete", "Marble", "Granite", "Slate", "Corroded Metal", "Force Field"
 }
-
 local BUILDING_TYPES = {
     "🏠 Дом", "🗼 Вышка", "🏰 Замок", "🏛️ Храм",
     "🗽 Маяк", "🏢 Небоскрёб", "⛪ Церковь", "🏚️ Хижина"
 }
 
--- BitBuffer
 local BitBuffer
 do
     local base64chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789#$"
@@ -50,7 +47,6 @@ end
 
 local GrandeurBloc = 1
 local PositionOrigin = Vector3.new(0, 0, 0)
-
 pcall(function()
     local mf = ReplicatedStorage:FindFirstChild("Modules")
     if mf then
@@ -88,7 +84,6 @@ local function placeBlock(x, y, z, color, material)
         pcall(function() pb:InvokeServer(unpack(args)) end)
     end)
 end
-
 -- === ПОСТРОЙКИ ===
 local function buildHouse(bx,by,bz,w,d,h,wall,floor,roof,glass,door)
     print("🏠 Дом...")
@@ -239,7 +234,7 @@ local function buildBuilding(t,bx,by,bz,w,d,h,wall,floor,roof,glass,door)
     elseif t=="⛪ Церковь" then buildChurch(bx,by,bz,w,d,h,wall,roof,glass)
     elseif t=="🏚️ Хижина" then buildHut(bx,by,bz,w,d,h,wall,roof) end
 end
-
+-- === СТРОИТЕЛЬ ===
 local builder = {
     active=false, previewParts={}, rotation=0, baseY=0,
     width=7, depth=7, height=4,
@@ -538,4 +533,28 @@ buildBtn.MouseButton1Click:Connect(function()
     builder.active=true; builder.previewInitialized=false
     clearPreview(); onMouseMove()
     print(string.format("✅ %s %dx%dx%d готов!", builder.buildingType, w, d, h))
-    print("🖱️
+    print("🖱️ Кликни ЛКМ по миру, чтобы построить")
+end)
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.R or input.KeyCode == Enum.KeyCode.T or input.KeyCode == Enum.KeyCode.Escape then
+        onKeyDown(input)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        onMouseClick()
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if builder.active then
+            builder.active = false; clearPreview(); print("❌ Отменено")
+        end
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        onMouseMove()
+    elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+        onMouseWheel(input)
+    end
+end)
+
+print("🏗️ Строитель построек загружен!")
