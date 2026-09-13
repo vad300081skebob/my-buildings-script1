@@ -1,4 +1,4 @@
--- ============ СТРОИТЕЛЬ v22.0 — ЗДАНИЯ + ДЕКОРАЦИИ + АРТЫ ============
+-- ============ СТРОИТЕЛЬ v23.0 — ЗДАНИЯ + ДЕКОРАЦИИ + АРТЫ ============
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -302,7 +302,7 @@ local function buildTower(bx, by, bz, w, d, h)
     print("✅ Вышка готова!")
 end
 
--- ============ ДЕКОРАЦИИ (строятся от центра) ============
+-- ============ ДЕКОРАЦИИ ============
 
 local function buildTree(cx, cy, cz)
     print("🌳 Дерево...")
@@ -513,45 +513,141 @@ local function getMouseGrid()
     return Vector3.new(0, 0, 0)
 end
 
+local function addP(cx, cy, cz, color)
+    table.insert(builder.previewParts, createPreview(color, gridToWorld(Vector3.new(cx, cy, cz))))
+end
+
 local function updatePreview()
     if not builder.active then return end
     clearPreview()
     local baseGrid = getMouseGrid()
+    local bX, bZ = baseGrid.X, baseGrid.Z
     local rot = builder.rotation
-    
+    local t = builder.buildingType
+
     if builder.mode == "buildings" then
-        if builder.isDecor then
-            -- Декорации: показываем маленький маркер
-            local pos = gridToWorld(Vector3.new(baseGrid.X, builder.baseY, baseGrid.Z))
-            table.insert(builder.previewParts, createPreview(Color3.fromRGB(100, 255, 100), pos))
-            -- Плюс соседние для наглядности
-            for _, off in ipairs({{1,0},{-1,0},{0,1},{0,-1},{1,1},{-1,-1},{1,-1},{-1,1}}) do
-                local p2 = gridToWorld(Vector3.new(baseGrid.X + off[1], builder.baseY, baseGrid.Z + off[2]))
-                table.insert(builder.previewParts, createPreview(Color3.fromRGB(60, 200, 60), p2))
-            end
-            return
-        end
-        local w, d, h = builder.width, builder.depth, builder.height
-        local bX, bZ = baseGrid.X, baseGrid.Z
-        for x = -2, w + 1 do
-            for z = -2, d + 1 do
-                for y = -1, h + 5 do
-                    local wx, wz = bX + x, bZ + z
-                    if rot == 90 then wx, wz = bX - z, bZ + x
-                    elseif rot == 180 then wx, wz = bX - x, bZ - z
-                    elseif rot == 270 then wx, wz = bX + z, bZ - x end
-                    local color
-                    if y == -1 then color = Color3.fromRGB(80,80,80)
-                    elseif y > h then color = Color3.fromRGB(200,100,50)
-                    elseif x == 0 or x == w-1 or z == 0 or z == d-1 then color = Color3.fromRGB(200,180,160)
-                    else color = Color3.fromRGB(100,100,100) end
-                    table.insert(builder.previewParts, createPreview(color, gridToWorld(Vector3.new(wx, builder.baseY + y, wz))))
+        if t:find("дом") or t:find("Дом") or t:find("Коттедж") or t:find("Хижина") then
+            local w, d, h = builder.width, builder.depth, builder.height
+            for x = -1, w do for z = -1, d do addP(bX+x, builder.baseY-1, bZ+z, Color3.fromRGB(150,150,150)) end end
+            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
+                if x == 0 or x == w-1 or z == 0 or z == d-1 then
+                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(200,180,160))
                 end
+            end end end
+            for x = 0, w-1 do for z = 0, d-1 do
+                addP(bX+x, builder.baseY, bZ+z, Color3.fromRGB(180,150,100))
+                addP(bX+x, builder.baseY+h, bZ+z, Color3.fromRGB(200,200,200))
+            end end
+            for y = 1, 3 do for x = y-1, w-y do for z = y-1, d-y do
+                if x == y-1 or x == w-y or z == y-1 or z == d-y then
+                    addP(bX+x, builder.baseY+h+y, bZ+z, Color3.fromRGB(200,100,50))
+                end
+            end end end
+
+        elseif t:find("Магазин") or t:find("Торговый") then
+            local w, d, h = builder.width, builder.depth, builder.height
+            for x = 0, w-1 do for z = 0, d-1 do
+                addP(bX+x, builder.baseY, bZ+z, Color3.fromRGB(180,180,180))
+                addP(bX+x, builder.baseY+h, bZ+z, Color3.fromRGB(180,180,180))
+            end end
+            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
+                if x == 0 or x == w-1 or z == 0 or z == d-1 then
+                    local isGlass = (y >= 1 and y <= h-2 and (x % 2 == 0 or z % 2 == 0))
+                    addP(bX+x, builder.baseY+y, bZ+z, isGlass and Color3.fromRGB(100,200,255) or Color3.fromRGB(220,220,230))
+                end
+            end end end
+
+        elseif t:find("Панелька") or t:find("Небоскрёб") then
+            local w, d, h = builder.width, builder.depth, builder.height
+            for x = 0, w-1 do for z = 0, d-1 do
+                addP(bX+x, builder.baseY+h, bZ+z, Color3.fromRGB(100,100,120))
+            end end
+            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
+                if x == 0 or x == w-1 or z == 0 or z == d-1 then
+                    local isWindow = (y % 2 == 1)
+                    addP(bX+x, builder.baseY+y, bZ+z, isWindow and Color3.fromRGB(150,220,255) or Color3.fromRGB(80,80,100))
+                end
+            end end end
+
+        elseif t:find("Замок") then
+            local w, d, h = builder.width, builder.depth, builder.height
+            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
+                if x == 0 or x == w-1 or z == 0 or z == d-1 then
+                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(180,160,140))
+                end
+            end end end
+            for _, tt in ipairs({{0,0},{w-1,0},{0,d-1},{w-1,d-1}}) do
+                for y = 0, h+2 do for x = -2, 2 do for z = -2, 2 do
+                    if math.abs(x) == 2 or math.abs(z) == 2 then
+                        addP(bX+tt[1]+x, builder.baseY+y, bZ+tt[2]+z, Color3.fromRGB(180,160,140))
+                    end
+                end end end
             end
+
+        elseif t:find("Вышка") then
+            local w, d, h = builder.width, builder.depth, builder.height
+            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
+                if x == 0 or x == w-1 or z == 0 or z == d-1 then
+                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(180,180,200))
+                end
+            end end end
+            addP(bX+math.floor(w/2), builder.baseY+h+1, bZ+math.floor(d/2), Color3.fromRGB(255,200,50))
+
+        elseif t:find("Дерево") then
+            for y = 0, 4 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(90,60,30)) end
+            for y = 5, 8 do
+                local r = 8 - y + 1
+                for x = -r, r do for z = -r, r do
+                    if x*x + z*z <= r*r then addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(50,150,50)) end
+                end end
+            end
+
+        elseif t:find("Ёлка") then
+            for y = 0, 3 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(70,50,30)) end
+            for y = 4, 8 do
+                local r = math.max(0, math.floor((8 - y) / 2) + 1)
+                for x = -r, r do for z = -r, r do
+                    if x*x + z*z <= r*r then addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(30,100,40)) end
+                end end
+            end
+
+        elseif t:find("Скамейка") then
+            for x = -1, 1 do
+                addP(bX+x, builder.baseY, bZ, Color3.fromRGB(120,80,50))
+                addP(bX+x, builder.baseY+1, bZ-1, Color3.fromRGB(120,80,50))
+                addP(bX+x, builder.baseY+2, bZ-1, Color3.fromRGB(120,80,50))
+            end
+
+        elseif t:find("Фонтан") then
+            for x = -2, 2 do for z = -2, 2 do
+                local c
+                if math.abs(x) == 2 or math.abs(z) == 2 then c = Color3.fromRGB(200,200,200)
+                else c = Color3.fromRGB(100,180,255) end
+                addP(bX+x, builder.baseY, bZ+z, c)
+            end end
+            for y = 1, 2 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(220,220,220)) end
+            addP(bX, builder.baseY+3, bZ, Color3.fromRGB(150,200,255))
+
+        elseif t:find("Фонарь") then
+            for y = 0, 3 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(50,50,50)) end
+            addP(bX, builder.baseY+4, bZ, Color3.fromRGB(255,240,180))
+
+        elseif t:find("Куст") then
+            for x = -1, 1 do for z = -1, 1 do for y = 0, 1 do
+                if math.abs(x) + math.abs(z) + y <= 2 then
+                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(60,130,60))
+                end
+            end end end
+
+        elseif t:find("Клумба") then
+            for x = -1, 1 do for z = -1, 1 do
+                addP(bX+x, builder.baseY-1, bZ+z, Color3.fromRGB(120,80,40))
+                addP(bX+x, builder.baseY, bZ+z, Color3.fromRGB(255,100,150))
+            end end
         end
+
     elseif builder.mode == "art" then
         local w, h = builder.artWidth, builder.artHeight
-        local bX, bZ = baseGrid.X, baseGrid.Z
         local idx = 1
         for row = 0, h - 1 do
             for col = 0, w - 1 do
@@ -560,7 +656,7 @@ local function updatePreview()
                 elseif rot == 180 then wx, wz = bX - col, bZ - row
                 elseif rot == 270 then wx, wz = bX + row, bZ - col end
                 local color = builder.artColors[idx] or Color3.new(1,1,1)
-                table.insert(builder.previewParts, createPreview(color, gridToWorld(Vector3.new(wx, builder.baseY, wz))))
+                addP(wx, builder.baseY, wz, color)
                 idx = idx + 1
             end
         end
@@ -658,7 +754,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -35, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "🏗️ СТРОИТЕЛЬ v22.0"
+title.Text = "🏗️ СТРОИТЕЛЬ v23.0"
 title.TextColor3 = Color3.fromRGB(255, 200, 50)
 title.Font = Enum.Font.Code
 title.TextSize = 14
@@ -858,6 +954,7 @@ local function refreshBuildingsDropdown(group)
                     end
                 end
                 print("🏗️ "..b.name..(b.isDecor and " [декор]" or ""))
+                if builder.active then updatePreview() end
                 break
             end
         end
@@ -865,7 +962,6 @@ local function refreshBuildingsDropdown(group)
     buildingDropdownFrame = newFrame
 end
 
--- Создаём дропдаун групп
 makeDropdown(tab1, UDim2.new(0, 90, 0, y), groupNames, BUILDING_GROUPS[1].name, 200, function(groupName)
     for _, g in ipairs(BUILDING_GROUPS) do
         if g.name == groupName then
@@ -887,7 +983,6 @@ lbl2.TextSize = 12
 lbl2.TextXAlignment = Enum.TextXAlignment.Left
 lbl2.Parent = tab1
 
--- Инициализация дропдауна зданий для первой группы
 refreshBuildingsDropdown(BUILDING_GROUPS[1])
 
 y = y + 30
@@ -1100,4 +1195,4 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-print("🏗️ СТРОИТЕЛЬ v22.0 загружен!")
+print("🏗️ СТРОИТЕЛЬ v23.0 загружен!")
