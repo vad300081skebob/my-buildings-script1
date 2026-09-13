@@ -674,3 +674,136 @@ typeLbl.Size = UDim2.new(0, 80, 0, 20)
 typeLbl.Position = UDim2.new(0, 10, 0, y + 3 * 28 + 5)
 typeLbl.BackgroundTransparency = 1
 typeLbl.Text
+typeLbl.Text = "🏗️ Тип:"
+typeLbl.TextColor3 = Color3.new(1, 1, 1)
+typeLbl.Font = Enum.Font.Code
+typeLbl.TextSize = 12
+typeLbl.TextXAlignment = Enum.TextXAlignment.Left
+typeLbl.Parent = main
+
+makeDropdown(main, UDim2.new(0, 100, 0, y + 3 * 28 + 5), BUILDING_TYPES, "🏠 Дом", function(s)
+    builder.buildingType = s
+    print("🏗️ Тип: " .. s)
+end)
+
+-- Материалы (5 штук)
+local matY = y + 3 * 28 + 35
+local matConfigs = {
+    {"🧱 Стены:", "Brick", "wallMat"},
+    {"🪵 Пол:", "Wood", "floorMat"},
+    {"🏠 Крыша:", "Slate", "roofMat"},
+    {"🪟 Стекло:", "Glass", "glassMat"},
+    {"🚪 Дверь:", "Wood", "doorMat"}
+}
+for i, cfg in ipairs(matConfigs) do
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(0, 70, 0, 20)
+    lbl.Position = UDim2.new(0, 10, 0, matY + (i - 1) * 28)
+    lbl.BackgroundTransparency = 1
+    lbl.Text = cfg[1]
+    lbl.TextColor3 = Color3.new(1, 1, 1)
+    lbl.Font = Enum.Font.Code
+    lbl.TextSize = 11
+    lbl.TextXAlignment = Enum.TextXAlignment.Left
+    lbl.Parent = main
+
+    makeDropdown(main, UDim2.new(0, 85, 0, matY + (i - 1) * 28), MATERIALS, cfg[2], function(s)
+        builder[cfg[3]] = s
+        print(cfg[1] .. " " .. s)
+    end)
+end
+
+-- Кнопка «Построить»
+local buildBtnY = matY + 5 * 28 + 10
+local buildBtn = Instance.new("TextButton")
+buildBtn.Size = UDim2.new(0, 170, 0, 32)
+buildBtn.Position = UDim2.new(0, 10, 0, buildBtnY)
+buildBtn.Text = "🏗️ Построить"
+buildBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
+buildBtn.TextColor3 = Color3.new(1, 1, 1)
+buildBtn.Font = Enum.Font.Code
+buildBtn.TextSize = 13
+buildBtn.BorderSizePixel = 0
+buildBtn.Parent = main
+
+local cancelBtn = Instance.new("TextButton")
+cancelBtn.Size = UDim2.new(0, 90, 0, 32)
+cancelBtn.Position = UDim2.new(0, 190, 0, buildBtnY)
+cancelBtn.Text = "❌ Отмена"
+cancelBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
+cancelBtn.TextColor3 = Color3.new(1, 1, 1)
+cancelBtn.Font = Enum.Font.Code
+cancelBtn.TextSize = 13
+cancelBtn.BorderSizePixel = 0
+cancelBtn.Parent = main
+
+cancelBtn.MouseButton1Click:Connect(function()
+    builder.active = false
+    clearPreview()
+    print("❌ Отменено")
+end)
+
+-- Подсказка
+local hint = Instance.new("TextLabel")
+hint.Size = UDim2.new(1, -20, 0, 50)
+hint.Position = UDim2.new(0, 10, 0, buildBtnY + 40)
+hint.BackgroundTransparency = 1
+hint.Text = "🔄 R = поворот | Колесо = поворот\n⬆️ Shift+T = высота | Esc/ПКМ = отмена"
+hint.TextColor3 = Color3.fromRGB(150, 150, 150)
+hint.Font = Enum.Font.Code
+hint.TextSize = 10
+hint.TextXAlignment = Enum.TextXAlignment.Left
+hint.Parent = main
+
+-- Обработчик кнопки «Построить»
+buildBtn.MouseButton1Click:Connect(function()
+    local w = tonumber(sizeBoxes[1].Text) or 7
+    local d = tonumber(sizeBoxes[2].Text) or 7
+    local h = tonumber(sizeBoxes[3].Text) or 4
+
+    if w < 2 or d < 2 or h < 2 then
+        print("❌ Минимальный размер: 2x2x2")
+        return
+    end
+
+    builder.width = w
+    builder.depth = d
+    builder.height = h
+    builder.rotation = 0
+    builder.baseY = 0
+    builder.active = true
+    builder.previewInitialized = false
+
+    clearPreview()
+    onMouseMove()
+
+    print(string.format("✅ %s %dx%dx%d готов!", builder.buildingType, w, d, h))
+    print("🖱️ Кликни ЛКМ по миру, чтобы построить")
+end)
+
+-- Ввод
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.R or input.KeyCode == Enum.KeyCode.T or input.KeyCode == Enum.KeyCode.Escape then
+        onKeyDown(input)
+    elseif input.UserInputType == Enum.UserInputType.MouseButton1 then
+        onMouseClick()
+    elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+        if builder.active then
+            builder.active = false
+            clearPreview()
+            print("❌ Отменено")
+        end
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement then
+        onMouseMove()
+    elseif input.UserInputType == Enum.UserInputType.MouseWheel then
+        onMouseWheel(input)
+    end
+end)
+print("🏗️ Строитель построек загружен!")
+print("📐 Размеры, тип, материалы — всё в GUI")
+print("🔄 R = поворот, Shift+T = высота")
