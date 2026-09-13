@@ -1,4 +1,4 @@
--- ============ СТРОИТЕЛЬ v23.0 — ЗДАНИЯ + ДЕКОРАЦИИ + АРТЫ ============
+-- ============ СТРОИТЕЛЬ v26.1 — АРТЫ + 3D-СХЕМА (фикс стёкол) ============
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -89,377 +89,132 @@ local function parseHex(hex)
     return nil
 end
 
--- ============ ПОСТРОЙКИ ============
+-- ============ АЛИАСЫ ============
+local BLOCK_ALIASES = {
+    -- Строительные
+    ["block"] = 43, ["brick"] = 43, ["stone"] = 43, ["wood"] = 43,
+    ["stair"] = 44, ["stair_inner"] = 49, ["stair_outer"] = 50, ["stair_tri"] = 132,
+    ["ladder"] = 45,
+    ["slab"] = 48, ["plate"] = 53,
+    ["empty"] = 79, ["reinforced"] = 143, ["clay"] = 144,
+    ["junction"] = 153, ["checkered"] = 174,
+    ["obsidian"] = 139,
+    -- Двери и окна
+    ["door"] = 75, ["door_el"] = 76, ["trapdoor"] = 127, ["trapdoor_el"] = 128,
+    ["pane"] = 82, ["corner_pane"] = 81, ["glass"] = 82,
+    -- Мебель
+    ["chair"] = 71, ["chair_stair"] = 154, ["chair_solid"] = 155, ["chair_slab"] = 156,
+    -- Столбы
+    ["pole"] = 108, ["pole3"] = 110, ["pole4"] = 86, ["pole5"] = 87, ["pole6"] = 88,
+    ["pole4b"] = 105, ["corner_pole"] = 107, ["tpole"] = 109,
+    -- Балки
+    ["beam2"] = 188, ["beam3"] = 189, ["beam4"] = 96, ["beam5"] = 190,
+    ["beam6"] = 191, ["beam7"] = 97, ["beam8"] = 192,
+    -- Свет
+    ["torch"] = 46, ["lamp"] = 33, ["light"] = 12, ["neon"] = 32,
+    ["rgb_light"] = 34, ["led"] = 61, ["spotlight"] = 187,
+    -- Знаки и кнопки
+    ["sign"] = 22, ["sign12"] = 175, ["text_panel"] = 73,
+    ["lever"] = 23, ["button"] = 21, ["button_toggle"] = 24, ["button_instant"] = 25,
+    ["plate_btn"] = 120, ["pressure"] = 118,
+    -- Спец
+    ["tnt"] = 78, ["nuclear"] = 125, ["cake"] = 178,
+    ["piston"] = 54, ["sticky_piston"] = 77,
+    ["spawn"] = 113, ["checkpoint"] = 185, ["barrier"] = 30,
+}
 
-local function buildHouse(bx, by, bz, w, d, h)
-    print("🏠 Дом...")
-    for x = -1, w do for z = -1, d do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(100,100,100), "Concrete", 43)
-    end end
-    local dX = math.floor(w/2)
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if z == 0 and x == dX and y < 3 then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(150,100,50), "Wood", 75)
-            elseif (z == 0 or z == d-1) and y >= 1 and y <= 2 and (x == dX-2 or x == dX+2) then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(100,200,255), "Glass", 82)
-            elseif (x == 0 or x == w-1) and y >= 1 and y <= 2 and z == math.floor(d/2) then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(100,200,255), "Glass", 82)
+-- ============ ПАРСЕР ЯЧЕЙКИ (с фиксом стёкол) ============
+local function parseCell(str)
+    if str == "." or str == "" then return nil, nil, nil end
+    local material, hex, blockId
+
+    local parts = {}
+    for p in str:gmatch("[^#]+") do
+        table.insert(parts, p)
+    end
+
+    local firstName = parts[1] or ""
+    local nameL = firstName:lower()
+
+    if #parts >= 2 then
+        hex = "#" .. parts[2]
+        if BLOCK_ALIASES[nameL] then
+            blockId = BLOCK_ALIASES[nameL]
+            material = "Default"
+        else
+            local n = tonumber(firstName)
+            if n then
+                blockId = n
+                material = "Default"
             else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(200,180,160), "Brick", 43)
+                material = firstName
             end
         end
-    end end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        placeBlock(bx+x, by, bz+z, Color3.fromRGB(180,150,100), "Wood", 43)
-    end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(200,200,200), "Concrete", 43)
-    end end
-    for y = 1, 3 do
-        for x = y-1, w-y do
-            for z = y-1, d-y do
-                if x == y-1 or x == w-y or z == y-1 or z == d-y then
-                    placeBlock(bx+x, by+h+y, bz+z, Color3.fromRGB(150,80,50), "Slate", 43)
+    elseif #parts == 1 then
+        if str:sub(1,1) == "#" then
+            hex = str
+        else
+            if BLOCK_ALIASES[nameL] then
+                blockId = BLOCK_ALIASES[nameL]
+                material = "Default"
+            else
+                local n = tonumber(firstName)
+                if n then
+                    blockId = n
+                    material = "Default"
+                else
+                    material = firstName
                 end
             end
         end
     end
-    placeBlock(bx+dX, by, bz-1, Color3.fromRGB(150,100,50), "Wood", 44)
-    print("✅ Дом готов!")
+
+    -- Считаем цвет СРАЗУ
+    local color = hex and parseHex(hex) or nil
+
+    -- 🔧 ФИКС СТЁКОЛ: pane (82) и corner_pane (81) → обычный блок 43 с материалом Glass
+    if blockId == 82 or blockId == 81 then
+        blockId = 43
+        material = "Glass"
+        if not color then
+            color = Color3.fromRGB(150, 220, 255)
+        end
+    end
+
+    return material, color, blockId
 end
 
-local function buildCottage(bx, by, bz, w, d, h)
-    buildHouse(bx, by, bz, w, d, h)
-    local midY = math.floor(h/2)
-    for x = -1, 1 do
-        placeBlock(bx+x, by+midY, bz-1, Color3.fromRGB(120,80,50), "Wooden Planks", 48)
-    end
-    for x = -1, 1 do
-        placeBlock(bx+x, by+midY+1, bz-1, Color3.fromRGB(100,70,40), "Wood", 43)
-    end
-    print("✅ Коттедж готов!")
-end
+-- ============ ПАРСЕР СХЕМЫ ============
+local function parseSchema(text)
+    local layers = {}
+    local currentLayer = {}
+    local currentRow = {}
 
-local function buildHut(bx, by, bz, w, d, h)
-    print("🏚️ Хижина...")
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if z == 0 and x == math.floor(w/2) and y < 2 then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(100,70,40), "Wood", 75)
-            else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(160,130,100), "Wood", 43)
+    for line in (text .. "\n"):gmatch("[^\n]*\n") do
+        line = line:gsub("\n", "")
+        if line:match("^%s*$") then
+            if #currentRow > 0 then
+                table.insert(currentLayer, currentRow)
+                currentRow = {}
+            end
+            if #currentLayer > 0 then
+                table.insert(layers, currentLayer)
+                currentLayer = {}
+            end
+        else
+            for cell in line:gmatch("[^%s,]+") do
+                table.insert(currentRow, cell)
+            end
+            if #currentRow > 0 then
+                table.insert(currentLayer, currentRow)
+                currentRow = {}
             end
         end
-    end end end
-    for y = 1, 3 do for x = y-1, w-y do for z = y-1, d-y do
-        if x == y-1 or x == w-y or z == y-1 or z == d-y then
-            placeBlock(bx+x, by+h+y, bz+z, Color3.fromRGB(180,150,80), "Slate", 43)
-        end
-    end end end
-    print("✅ Хижина готова!")
-end
-
-local function buildShop(bx, by, bz, w, d, h)
-    print("🏪 Магазин...")
-    for x = -1, w do for z = -1, d do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(120,120,120), "Concrete", 43)
-    end end
-    local dX = math.floor(w/2)
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if z == 0 and y < 3 and (x == dX-1 or x == dX or x == dX+1) then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(100,200,255), "Glass", 82)
-            else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(220,220,230), "Concrete", 43)
-            end
-        end
-    end end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        placeBlock(bx+x, by, bz+z, Color3.fromRGB(180,180,180), "Concrete", 43)
-        placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(180,180,180), "Concrete", 43)
-    end end
-    placeBlock(bx+dX, by+h+1, bz, Color3.fromRGB(255,100,100), "Neon", 33)
-    print("✅ Магазин готов!")
-end
-
-local function buildMall(bx, by, bz, w, d, h)
-    print("🏬 Торговый центр...")
-    for x = -2, w+1 do for z = -2, d+1 do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(100,100,100), "Concrete", 43)
-    end end
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if y >= 1 and y <= h-2 and (x % 2 == 0 or z % 2 == 0) then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(150,220,255), "Glass", 82)
-            else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(220,220,230), "Concrete", 43)
-            end
-        end
-    end end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        placeBlock(bx+x, by, bz+z, Color3.fromRGB(180,180,180), "Marble", 43)
-        placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(180,180,180), "Concrete", 43)
-    end end
-    print("✅ ТЦ готов!")
-end
-
-local function buildPanel(bx, by, bz, w, d, h)
-    print("🏢 Панелька...")
-    for x = -1, w do for z = -1, d do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(80,80,80), "Concrete", 43)
-    end end
-    local dX = math.floor(w/2)
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if y == 0 and z == 0 and x == dX then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(150,100,50), "Wood", 75)
-            elseif y >= 1 and y % 2 == 1 then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(150,220,255), "Glass", 82)
-            else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(180,180,180), "Brick", 43)
-            end
-        end
-    end end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(150,150,150), "Concrete", 43)
-    end end
-    print("✅ Панелька готова!")
-end
-
-local function buildSkyscraper(bx, by, bz, w, d, h)
-    print("🏙️ Небоскрёб...")
-    for x = -2, w+1 do for z = -2, d+1 do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(60,60,60), "Concrete", 43)
-    end end
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if y % 2 == 0 then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(150,220,255), "Glass", 82)
-            else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(80,80,100), "Metal", 43)
-            end
-        end
-    end end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(100,100,120), "Concrete", 43)
-    end end
-    for y = 1, 6 do
-        placeBlock(bx+math.floor(w/2), by+h+y, bz+math.floor(d/2), Color3.fromRGB(200,50,50), "Metal", 46)
     end
-    print("✅ Небоскрёб готов!")
+    if #currentRow > 0 then table.insert(currentLayer, currentRow) end
+    if #currentLayer > 0 then table.insert(layers, currentLayer) end
+    return layers
 end
-
-local function buildCastle(bx, by, bz, w, d, h)
-    print("🏰 Замок...")
-    for x = -3, w+2 do for z = -3, d+2 do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(80,80,80), "Concrete", 43)
-    end end
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(180,160,140), "Brick", 43)
-        end
-    end end end
-    for x = 0, w-1 do for z = 0, d-1 do
-        if (x == 0 or x == w-1 or z == 0 or z == d-1) and x % 2 == 0 and z % 2 == 0 then
-            placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(180,160,140), "Brick", 43)
-        end
-    end end
-    for _, t in ipairs({{0,0},{w-1,0},{0,d-1},{w-1,d-1}}) do
-        local tx, tz = t[1], t[2]
-        for y = 0, h+2 do for x = -2, 2 do for z = -2, 2 do
-            if math.abs(x) == 2 or math.abs(z) == 2 then
-                placeBlock(bx+tx+x, by+y, bz+tz+z, Color3.fromRGB(180,160,140), "Brick", 43)
-            end
-        end end end
-        for x = -2, 2 do for z = -2, 2 do
-            placeBlock(bx+tx+x, by+h+3, bz+tz+z, Color3.fromRGB(120,60,40), "Slate", 43)
-        end end
-    end
-    print("✅ Замок готов!")
-end
-
-local function buildTower(bx, by, bz, w, d, h)
-    print("🗼 Вышка...")
-    for x = -1, w do for z = -1, d do
-        placeBlock(bx+x, by-1, bz+z, Color3.fromRGB(100,100,100), "Concrete", 43)
-    end end
-    for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-        if x == 0 or x == w-1 or z == 0 or z == d-1 then
-            if y % 2 == 0 then
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(100,200,255), "Glass", 82)
-            else
-                placeBlock(bx+x, by+y, bz+z, Color3.fromRGB(200,200,200), "Metal", 43)
-            end
-        end
-    end end end
-    for x = -1, w do for z = -1, d do
-        placeBlock(bx+x, by+h, bz+z, Color3.fromRGB(150,100,50), "Slate", 43)
-    end end
-    for y = 1, 3 do
-        placeBlock(bx+math.floor(w/2), by+h+y, bz+math.floor(d/2), Color3.fromRGB(255,200,50), "Metal", 46)
-    end
-    print("✅ Вышка готова!")
-end
-
--- ============ ДЕКОРАЦИИ ============
-
-local function buildTree(cx, cy, cz)
-    print("🌳 Дерево...")
-    for y = 0, 4 do
-        placeBlock(cx, cy+y, cz, Color3.fromRGB(90,60,30), "Wood", 43)
-    end
-    for y = 5, 8 do
-        local r = 8 - y + 1
-        for x = -r, r do for z = -r, r do
-            if x*x + z*z <= r*r then
-                placeBlock(cx+x, cy+y, cz+z, Color3.fromRGB(50,150,50), "Grass", 43)
-            end
-        end end
-    end
-    print("✅ Дерево готово!")
-end
-
-local function buildPineTree(cx, cy, cz)
-    print("🌲 Ёлка...")
-    for y = 0, 3 do
-        placeBlock(cx, cy+y, cz, Color3.fromRGB(70,50,30), "Wood", 43)
-    end
-    for y = 4, 8 do
-        local r = math.max(0, math.floor((8 - y) / 2) + 1)
-        for x = -r, r do for z = -r, r do
-            if x*x + z*z <= r*r then
-                placeBlock(cx+x, cy+y, cz+z, Color3.fromRGB(30,100,40), "Grass", 43)
-            end
-        end end
-    end
-    print("✅ Ёлка готова!")
-end
-
-local function buildBench(cx, cy, cz)
-    print("🪑 Скамейка...")
-    for x = -1, 1 do
-        placeBlock(cx+x, cy, cz, Color3.fromRGB(120,80,50), "Wooden Planks", 48)
-    end
-    for x = -1, 1 do
-        placeBlock(cx+x, cy+1, cz-1, Color3.fromRGB(120,80,50), "Wooden Planks", 43)
-        placeBlock(cx+x, cy+2, cz-1, Color3.fromRGB(120,80,50), "Wooden Planks", 43)
-    end
-    placeBlock(cx-1, cy-1, cz, Color3.fromRGB(80,50,30), "Wood", 43)
-    placeBlock(cx+1, cy-1, cz, Color3.fromRGB(80,50,30), "Wood", 43)
-    print("✅ Скамейка готова!")
-end
-
-local function buildFountain(cx, cy, cz)
-    print("⛲ Фонтан...")
-    for x = -2, 2 do for z = -2, 2 do
-        if math.abs(x) == 2 or math.abs(z) == 2 then
-            placeBlock(cx+x, cy, cz+z, Color3.fromRGB(200,200,200), "Marble", 43)
-        end
-    end end
-    for x = -1, 1 do for z = -1, 1 do
-        placeBlock(cx+x, cy, cz+z, Color3.fromRGB(100,180,255), "Glass", 43)
-    end end
-    for y = 1, 2 do
-        placeBlock(cx, cy+y, cz, Color3.fromRGB(220,220,220), "Marble", 43)
-    end
-    placeBlock(cx, cy+3, cz, Color3.fromRGB(150,200,255), "Glass", 33)
-    placeBlock(cx-1, cy+3, cz, Color3.fromRGB(150,200,255), "Glass", 33)
-    placeBlock(cx+1, cy+3, cz, Color3.fromRGB(150,200,255), "Glass", 33)
-    placeBlock(cx, cy+3, cz-1, Color3.fromRGB(150,200,255), "Glass", 33)
-    placeBlock(cx, cy+3, cz+1, Color3.fromRGB(150,200,255), "Glass", 33)
-    print("✅ Фонтан готов!")
-end
-
-local function buildLamp(cx, cy, cz)
-    print("💡 Фонарь...")
-    for y = 0, 3 do
-        placeBlock(cx, cy+y, cz, Color3.fromRGB(50,50,50), "Metal", 43)
-    end
-    placeBlock(cx, cy+4, cz, Color3.fromRGB(255,240,180), "Glass", 33)
-    for _, off in ipairs({{1,0},{-1,0},{0,1},{0,-1}}) do
-        placeBlock(cx+off[1], cy+4, cz+off[2], Color3.fromRGB(255,240,180), "Glass", 33)
-    end
-    print("✅ Фонарь готов!")
-end
-
-local function buildBush(cx, cy, cz)
-    print("🌿 Куст...")
-    for x = -1, 1 do for z = -1, 1 do for y = 0, 1 do
-        if math.abs(x) + math.abs(z) + y <= 2 then
-            placeBlock(cx+x, cy+y, cz+z, Color3.fromRGB(60,130,60), "Grass", 43)
-        end
-    end end end
-    print("✅ Куст готов!")
-end
-
-local function buildFlowerBed(cx, cy, cz)
-    print("🌷 Клумба...")
-    for x = -1, 1 do for z = -1, 1 do
-        placeBlock(cx+x, cy-1, cz+z, Color3.fromRGB(120,80,40), "Wood", 43)
-    end end
-    local colors = {
-        Color3.fromRGB(255,100,150), Color3.fromRGB(255,200,100),
-        Color3.fromRGB(200,100,255), Color3.fromRGB(255,50,50)
-    }
-    local i = 1
-    for x = -1, 1 do for z = -1, 1 do
-        placeBlock(cx+x, cy, cz+z, colors[(i % 4) + 1], "Grass", 43)
-        i = i + 1
-    end end
-    print("✅ Клумба готова!")
-end
-
--- ============ ГРУППЫ ============
-
-local BUILDING_GROUPS = {
-    {
-        name = "🏠 Дома",
-        buildings = {
-            {name = "🏠 Одноэтажный дом", func = buildHouse, defW=7, defD=7, defH=5, isDecor=false},
-            {name = "🏡 Двухэтажный коттедж", func = buildCottage, defW=8, defD=8, defH=7, isDecor=false},
-            {name = "🏚️ Хижина", func = buildHut, defW=5, defD=5, defH=4, isDecor=false},
-        }
-    },
-    {
-        name = "🏢 Магазины и ТЦ",
-        buildings = {
-            {name = "🏪 Магазин", func = buildShop, defW=8, defD=6, defH=4, isDecor=false},
-            {name = "🏬 Торговый центр", func = buildMall, defW=15, defD=12, defH=6, isDecor=false},
-        }
-    },
-    {
-        name = "🏢 Многоэтажки",
-        buildings = {
-            {name = "🏢 Панелька", func = buildPanel, defW=6, defD=6, defH=9, isDecor=false},
-            {name = "🏙️ Небоскрёб", func = buildSkyscraper, defW=9, defD=9, defH=20, isDecor=false},
-        }
-    },
-    {
-        name = "🏛️ Общественные",
-        buildings = {
-            {name = "🏰 Замок", func = buildCastle, defW=14, defD=14, defH=6, isDecor=false},
-        }
-    },
-    {
-        name = "🗼 Спецсооружения",
-        buildings = {
-            {name = "🗼 Вышка", func = buildTower, defW=5, defD=5, defH=10, isDecor=false},
-        }
-    },
-    {
-        name = "🌳 Декорации",
-        buildings = {
-            {name = "🌳 Дерево", func = buildTree, isDecor=true},
-            {name = "🌲 Ёлка", func = buildPineTree, isDecor=true},
-            {name = "🪑 Скамейка", func = buildBench, isDecor=true},
-            {name = "⛲ Фонтан", func = buildFountain, isDecor=true},
-            {name = "💡 Фонарь", func = buildLamp, isDecor=true},
-            {name = "🌿 Куст", func = buildBush, isDecor=true},
-            {name = "🌷 Клумба", func = buildFlowerBed, isDecor=true},
-        }
-    }
-}
 
 -- ============ BUILDER ============
 local builder = {
@@ -467,13 +222,9 @@ local builder = {
     previewParts = {},
     rotation = 0,
     baseY = 0,
-    mode = "buildings",
-    buildingType = "🏠 Одноэтажный дом",
-    buildingFunc = buildHouse,
-    isDecor = false,
-    width = 7, depth = 7, height = 5,
-    artWidth = 10, artHeight = 10,
-    artColors = {}
+    mode = "art",
+    artWidth = 10, artHeight = 10, artColors = {},
+    schemaData = nil
 }
 
 -- ============ PREVIEW ============
@@ -523,130 +274,8 @@ local function updatePreview()
     local baseGrid = getMouseGrid()
     local bX, bZ = baseGrid.X, baseGrid.Z
     local rot = builder.rotation
-    local t = builder.buildingType
 
-    if builder.mode == "buildings" then
-        if t:find("дом") or t:find("Дом") or t:find("Коттедж") or t:find("Хижина") then
-            local w, d, h = builder.width, builder.depth, builder.height
-            for x = -1, w do for z = -1, d do addP(bX+x, builder.baseY-1, bZ+z, Color3.fromRGB(150,150,150)) end end
-            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-                if x == 0 or x == w-1 or z == 0 or z == d-1 then
-                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(200,180,160))
-                end
-            end end end
-            for x = 0, w-1 do for z = 0, d-1 do
-                addP(bX+x, builder.baseY, bZ+z, Color3.fromRGB(180,150,100))
-                addP(bX+x, builder.baseY+h, bZ+z, Color3.fromRGB(200,200,200))
-            end end
-            for y = 1, 3 do for x = y-1, w-y do for z = y-1, d-y do
-                if x == y-1 or x == w-y or z == y-1 or z == d-y then
-                    addP(bX+x, builder.baseY+h+y, bZ+z, Color3.fromRGB(200,100,50))
-                end
-            end end end
-
-        elseif t:find("Магазин") or t:find("Торговый") then
-            local w, d, h = builder.width, builder.depth, builder.height
-            for x = 0, w-1 do for z = 0, d-1 do
-                addP(bX+x, builder.baseY, bZ+z, Color3.fromRGB(180,180,180))
-                addP(bX+x, builder.baseY+h, bZ+z, Color3.fromRGB(180,180,180))
-            end end
-            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-                if x == 0 or x == w-1 or z == 0 or z == d-1 then
-                    local isGlass = (y >= 1 and y <= h-2 and (x % 2 == 0 or z % 2 == 0))
-                    addP(bX+x, builder.baseY+y, bZ+z, isGlass and Color3.fromRGB(100,200,255) or Color3.fromRGB(220,220,230))
-                end
-            end end end
-
-        elseif t:find("Панелька") or t:find("Небоскрёб") then
-            local w, d, h = builder.width, builder.depth, builder.height
-            for x = 0, w-1 do for z = 0, d-1 do
-                addP(bX+x, builder.baseY+h, bZ+z, Color3.fromRGB(100,100,120))
-            end end
-            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-                if x == 0 or x == w-1 or z == 0 or z == d-1 then
-                    local isWindow = (y % 2 == 1)
-                    addP(bX+x, builder.baseY+y, bZ+z, isWindow and Color3.fromRGB(150,220,255) or Color3.fromRGB(80,80,100))
-                end
-            end end end
-
-        elseif t:find("Замок") then
-            local w, d, h = builder.width, builder.depth, builder.height
-            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-                if x == 0 or x == w-1 or z == 0 or z == d-1 then
-                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(180,160,140))
-                end
-            end end end
-            for _, tt in ipairs({{0,0},{w-1,0},{0,d-1},{w-1,d-1}}) do
-                for y = 0, h+2 do for x = -2, 2 do for z = -2, 2 do
-                    if math.abs(x) == 2 or math.abs(z) == 2 then
-                        addP(bX+tt[1]+x, builder.baseY+y, bZ+tt[2]+z, Color3.fromRGB(180,160,140))
-                    end
-                end end end
-            end
-
-        elseif t:find("Вышка") then
-            local w, d, h = builder.width, builder.depth, builder.height
-            for y = 0, h-1 do for x = 0, w-1 do for z = 0, d-1 do
-                if x == 0 or x == w-1 or z == 0 or z == d-1 then
-                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(180,180,200))
-                end
-            end end end
-            addP(bX+math.floor(w/2), builder.baseY+h+1, bZ+math.floor(d/2), Color3.fromRGB(255,200,50))
-
-        elseif t:find("Дерево") then
-            for y = 0, 4 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(90,60,30)) end
-            for y = 5, 8 do
-                local r = 8 - y + 1
-                for x = -r, r do for z = -r, r do
-                    if x*x + z*z <= r*r then addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(50,150,50)) end
-                end end
-            end
-
-        elseif t:find("Ёлка") then
-            for y = 0, 3 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(70,50,30)) end
-            for y = 4, 8 do
-                local r = math.max(0, math.floor((8 - y) / 2) + 1)
-                for x = -r, r do for z = -r, r do
-                    if x*x + z*z <= r*r then addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(30,100,40)) end
-                end end
-            end
-
-        elseif t:find("Скамейка") then
-            for x = -1, 1 do
-                addP(bX+x, builder.baseY, bZ, Color3.fromRGB(120,80,50))
-                addP(bX+x, builder.baseY+1, bZ-1, Color3.fromRGB(120,80,50))
-                addP(bX+x, builder.baseY+2, bZ-1, Color3.fromRGB(120,80,50))
-            end
-
-        elseif t:find("Фонтан") then
-            for x = -2, 2 do for z = -2, 2 do
-                local c
-                if math.abs(x) == 2 or math.abs(z) == 2 then c = Color3.fromRGB(200,200,200)
-                else c = Color3.fromRGB(100,180,255) end
-                addP(bX+x, builder.baseY, bZ+z, c)
-            end end
-            for y = 1, 2 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(220,220,220)) end
-            addP(bX, builder.baseY+3, bZ, Color3.fromRGB(150,200,255))
-
-        elseif t:find("Фонарь") then
-            for y = 0, 3 do addP(bX, builder.baseY+y, bZ, Color3.fromRGB(50,50,50)) end
-            addP(bX, builder.baseY+4, bZ, Color3.fromRGB(255,240,180))
-
-        elseif t:find("Куст") then
-            for x = -1, 1 do for z = -1, 1 do for y = 0, 1 do
-                if math.abs(x) + math.abs(z) + y <= 2 then
-                    addP(bX+x, builder.baseY+y, bZ+z, Color3.fromRGB(60,130,60))
-                end
-            end end end
-
-        elseif t:find("Клумба") then
-            for x = -1, 1 do for z = -1, 1 do
-                addP(bX+x, builder.baseY-1, bZ+z, Color3.fromRGB(120,80,40))
-                addP(bX+x, builder.baseY, bZ+z, Color3.fromRGB(255,100,150))
-            end end
-        end
-
-    elseif builder.mode == "art" then
+    if builder.mode == "art" then
         local w, h = builder.artWidth, builder.artHeight
         local idx = 1
         for row = 0, h - 1 do
@@ -660,6 +289,25 @@ local function updatePreview()
                 idx = idx + 1
             end
         end
+
+    elseif builder.mode == "schema" then
+        if not builder.schemaData then return end
+        for y, layer in ipairs(builder.schemaData) do
+            for rowIdx, row in ipairs(layer) do
+                for colIdx, cell in ipairs(row) do
+                    local material, color, blockId = parseCell(cell)
+                    if material or color or blockId then
+                        local wx = bX + colIdx - 1
+                        local wz = bZ + rowIdx - 1
+                        local wy = builder.baseY + y - 1
+                        if rot == 90 then wx, wz = bX - (rowIdx - 1), bZ + (colIdx - 1)
+                        elseif rot == 180 then wx, wz = bX - (colIdx - 1), bZ - (rowIdx - 1)
+                        elseif rot == 270 then wx, wz = bX + (rowIdx - 1), bZ - (colIdx - 1) end
+                        addP(wx, wy, wz, color or Color3.fromRGB(200,180,160))
+                    end
+                end
+            end
+        end
     end
 end
 
@@ -668,21 +316,12 @@ local function onMouseClick()
     builder.active = false
     clearPreview()
     local baseGrid = getMouseGrid()
+    local bX, bZ = baseGrid.X, baseGrid.Z
+    local rot = builder.rotation
 
-    if builder.mode == "buildings" then
-        if builder.buildingFunc then
-            if builder.isDecor then
-                builder.buildingFunc(baseGrid.X, builder.baseY, baseGrid.Z)
-            else
-                builder.buildingFunc(baseGrid.X, builder.baseY, baseGrid.Z,
-                    builder.width, builder.depth, builder.height)
-            end
-        end
-    elseif builder.mode == "art" then
+    if builder.mode == "art" then
         print("🎨 Строим арт "..builder.artWidth.."x"..builder.artHeight)
         local w, h = builder.artWidth, builder.artHeight
-        local bX, bZ = baseGrid.X, baseGrid.Z
-        local rot = builder.rotation
         local idx = 1
         for row = h - 1, 0, -1 do
             for col = 0, w - 1 do
@@ -698,6 +337,29 @@ local function onMouseClick()
             end
         end
         print("✅ Арт построен!")
+
+    elseif builder.mode == "schema" then
+        if not builder.schemaData then return end
+        print("📐 Строим схему...")
+        local placed = 0
+        for y, layer in ipairs(builder.schemaData) do
+            for rowIdx, row in ipairs(layer) do
+                for colIdx, cell in ipairs(row) do
+                    local material, color, blockId = parseCell(cell)
+                    if material or color or blockId then
+                        local wx = bX + colIdx - 1
+                        local wz = bZ + rowIdx - 1
+                        local wy = builder.baseY + y - 1
+                        if rot == 90 then wx, wz = bX - (rowIdx - 1), bZ + (colIdx - 1)
+                        elseif rot == 180 then wx, wz = bX - (colIdx - 1), bZ - (rowIdx - 1)
+                        elseif rot == 270 then wx, wz = bX + (rowIdx - 1), bZ - (colIdx - 1) end
+                        placeBlock(wx, wy, wz, color or Color3.fromRGB(200,180,160), material or "Default", blockId or 43)
+                        placed = placed + 1
+                    end
+                end
+            end
+        end
+        print("✅ Схема построена! Блоков: "..placed)
     end
 end
 
@@ -739,8 +401,8 @@ gui.ResetOnSpawn = false
 gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 450, 0, 600)
-main.Position = UDim2.new(0.5, -225, 0.03, 0)
+main.Size = UDim2.new(0, 500, 0, 650)
+main.Position = UDim2.new(0.5, -250, 0.02, 0)
 main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -754,7 +416,7 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -35, 1, 0)
 title.Position = UDim2.new(0, 10, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "🏗️ СТРОИТЕЛЬ v23.0"
+title.Text = "🏗️ СТРОИТЕЛЬ v26.1 (фикс стёкол)"
 title.TextColor3 = Color3.fromRGB(255, 200, 50)
 title.Font = Enum.Font.Code
 title.TextSize = 14
@@ -796,9 +458,9 @@ tabsFrame.BackgroundTransparency = 1
 tabsFrame.Parent = main
 
 local tabBtn1 = Instance.new("TextButton")
-tabBtn1.Size = UDim2.new(0, 200, 0, 24)
+tabBtn1.Size = UDim2.new(0, 220, 0, 24)
 tabBtn1.Position = UDim2.new(0, 0, 0, 0)
-tabBtn1.Text = "🏗️ Здания и Декорации"
+tabBtn1.Text = "🎨 Арты (2D)"
 tabBtn1.BackgroundColor3 = Color3.fromRGB(0, 100, 200)
 tabBtn1.TextColor3 = Color3.new(1,1,1)
 tabBtn1.Font = Enum.Font.Code
@@ -807,9 +469,9 @@ tabBtn1.BorderSizePixel = 0
 tabBtn1.Parent = tabsFrame
 
 local tabBtn2 = Instance.new("TextButton")
-tabBtn2.Size = UDim2.new(0, 150, 0, 24)
-tabBtn2.Position = UDim2.new(0, 205, 0, 0)
-tabBtn2.Text = "🎨 Арты"
+tabBtn2.Size = UDim2.new(0, 240, 0, 24)
+tabBtn2.Position = UDim2.new(0, 225, 0, 0)
+tabBtn2.Text = "📐 Схема (3D + материалы)"
 tabBtn2.BackgroundColor3 = Color3.fromRGB(60,60,60)
 tabBtn2.TextColor3 = Color3.new(1,1,1)
 tabBtn2.Font = Enum.Font.Code
@@ -823,171 +485,15 @@ content.Position = UDim2.new(0, 10, 0, 65)
 content.BackgroundTransparency = 1
 content.Parent = main
 
-local function makeDropdown(parent, pos, options, default, width, cb)
-    local f = Instance.new("Frame")
-    f.Size = UDim2.new(0, width or 170, 0, 24)
-    f.Position = pos
-    f.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    f.BorderSizePixel = 1
-    f.BorderColor3 = Color3.fromRGB(50, 50, 60)
-    f.ClipsDescendants = false
-    f.ZIndex = 10
-    f.Parent = parent
-
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, 0, 1, 0)
-    b.Text = default
-    b.TextColor3 = Color3.new(1,1,1)
-    b.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-    b.BorderSizePixel = 0
-    b.Font = Enum.Font.Code
-    b.TextSize = 11
-    b.TextXAlignment = Enum.TextXAlignment.Left
-    b.ZIndex = 10
-    b.Parent = f
-
-    local arr = Instance.new("TextLabel")
-    arr.Size = UDim2.new(0, 20, 1, 0)
-    arr.Position = UDim2.new(1, -20, 0, 0)
-    arr.Text = "▼"
-    arr.TextColor3 = Color3.new(1,1,1)
-    arr.BackgroundTransparency = 1
-    arr.Font = Enum.Font.Code
-    arr.TextSize = 11
-    arr.ZIndex = 10
-    arr.Parent = f
-
-    local lf = Instance.new("Frame")
-    lf.Size = UDim2.new(1, 0, 0, math.min(#options, 10) * 22 + 4)
-    lf.Position = UDim2.new(0, 0, 0, 24)
-    lf.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
-    lf.BorderSizePixel = 1
-    lf.BorderColor3 = Color3.fromRGB(50, 50, 60)
-    lf.Visible = false
-    lf.ZIndex = 100
-    lf.Parent = f
-
-    local sf = Instance.new("ScrollingFrame")
-    sf.Size = UDim2.new(1, -2, 1, -2)
-    sf.Position = UDim2.new(0, 1, 0, 1)
-    sf.BackgroundTransparency = 1
-    sf.CanvasSize = UDim2.new(0, 0, 0, #options * 22)
-    sf.ScrollBarThickness = 4
-    sf.BorderSizePixel = 0
-    sf.ZIndex = 100
-    sf.Parent = lf
-
-    for i, opt in ipairs(options) do
-        local ob = Instance.new("TextButton")
-        ob.Size = UDim2.new(1, 0, 0, 22)
-        ob.Position = UDim2.new(0, 0, 0, (i-1) * 22)
-        ob.Text = type(opt) == "table" and opt.name or opt
-        ob.TextColor3 = Color3.new(1,1,1)
-        ob.BackgroundColor3 = (i % 2 == 0) and Color3.fromRGB(40,40,50) or Color3.fromRGB(30,30,40)
-        ob.BorderSizePixel = 0
-        ob.Font = Enum.Font.Code
-        ob.TextSize = 11
-        ob.TextXAlignment = Enum.TextXAlignment.Left
-        ob.ZIndex = 100
-        ob.Parent = sf
-        ob.MouseButton1Click:Connect(function()
-            b.Text = type(opt) == "table" and opt.name or opt
-            lf.Visible = false
-            if cb then cb(opt) end
-        end)
-    end
-
-    b.MouseButton1Click:Connect(function()
-        lf.Visible = not lf.Visible
-    end)
-    return f, b, lf
-end
-
--- ============ ВКЛАДКА 1 ============
+-- ============ ВКЛАДКА 1: АРТЫ ============
 local tab1 = Instance.new("Frame")
 tab1.Size = UDim2.new(1, 0, 1, 0)
 tab1.BackgroundTransparency = 1
 tab1.Parent = content
 
 local y = 5
-local lbl1 = Instance.new("TextLabel")
-lbl1.Size = UDim2.new(0, 90, 0, 20)
-lbl1.Position = UDim2.new(0, 0, 0, y)
-lbl1.BackgroundTransparency = 1
-lbl1.Text = "📁 Группа:"
-lbl1.TextColor3 = Color3.new(1,1,1)
-lbl1.Font = Enum.Font.Code
-lbl1.TextSize = 12
-lbl1.TextXAlignment = Enum.TextXAlignment.Left
-lbl1.Parent = tab1
-
-local groupNames = {}
-for _, g in ipairs(BUILDING_GROUPS) do
-    table.insert(groupNames, g.name)
-end
-
-local buildingDropdownFrame = nil
-
-local function refreshBuildingsDropdown(group)
-    if buildingDropdownFrame then 
-        buildingDropdownFrame:Destroy() 
-        buildingDropdownFrame = nil
-    end
-    local buildings = {}
-    for _, b in ipairs(group.buildings) do
-        table.insert(buildings, b.name)
-    end
-    local newFrame = makeDropdown(tab1, UDim2.new(0, 90, 0, 35), buildings, buildings[1], 240, function(buildingName)
-        for _, b in ipairs(group.buildings) do
-            if b.name == buildingName then
-                builder.buildingType = b.name
-                builder.buildingFunc = b.func
-                builder.isDecor = b.isDecor or false
-                if not b.isDecor then
-                    builder.width = b.defW or 7
-                    builder.depth = b.defD or 7
-                    builder.height = b.defH or 5
-                    if sizeBoxes then
-                        sizeBoxes[1].Text = tostring(builder.width)
-                        sizeBoxes[2].Text = tostring(builder.depth)
-                        sizeBoxes[3].Text = tostring(builder.height)
-                    end
-                end
-                print("🏗️ "..b.name..(b.isDecor and " [декор]" or ""))
-                if builder.active then updatePreview() end
-                break
-            end
-        end
-    end)
-    buildingDropdownFrame = newFrame
-end
-
-makeDropdown(tab1, UDim2.new(0, 90, 0, y), groupNames, BUILDING_GROUPS[1].name, 200, function(groupName)
-    for _, g in ipairs(BUILDING_GROUPS) do
-        if g.name == groupName then
-            refreshBuildingsDropdown(g)
-            break
-        end
-    end
-end)
-
-y = y + 30
-local lbl2 = Instance.new("TextLabel")
-lbl2.Size = UDim2.new(0, 90, 0, 20)
-lbl2.Position = UDim2.new(0, 0, 0, y)
-lbl2.BackgroundTransparency = 1
-lbl2.Text = "🏗️ Здание:"
-lbl2.TextColor3 = Color3.new(1,1,1)
-lbl2.Font = Enum.Font.Code
-lbl2.TextSize = 12
-lbl2.TextXAlignment = Enum.TextXAlignment.Left
-lbl2.Parent = tab1
-
-refreshBuildingsDropdown(BUILDING_GROUPS[1])
-
-y = y + 30
-local sizeBoxes = {}
-for i, lab in ipairs({"📐 Ширина:", "📏 Глубина:", "📐 Высота:"}) do
+local artSizeW, artSizeH
+for i, lab in ipairs({"📐 Ширина:", "📏 Высота:"}) do
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(0, 80, 0, 20)
     l.Position = UDim2.new(0, 0, 0, y + (i-1)*28)
@@ -1002,86 +508,13 @@ for i, lab in ipairs({"📐 Ширина:", "📏 Глубина:", "📐 Выс
     local box = Instance.new("TextBox")
     box.Size = UDim2.new(0, 60, 0, 20)
     box.Position = UDim2.new(0, 90, 0, y + (i-1)*28)
-    box.Text = "7"
-    if i == 3 then box.Text = "5" end
-    box.BackgroundColor3 = Color3.fromRGB(10,10,15)
-    box.TextColor3 = Color3.new(1,1,1)
-    box.Font = Enum.Font.Code
-    box.TextSize = 12
-    box.BorderSizePixel = 0
-    box.Parent = tab1
-    sizeBoxes[i] = box
-end
-
-y = y + 3*28 + 20
-local buildBtn = Instance.new("TextButton")
-buildBtn.Size = UDim2.new(1, 0, 0, 40)
-buildBtn.Position = UDim2.new(0, 0, 0, y)
-buildBtn.Text = "🏗️ Построить"
-buildBtn.BackgroundColor3 = Color3.fromRGB(200, 100, 0)
-buildBtn.TextColor3 = Color3.new(1,1,1)
-buildBtn.Font = Enum.Font.Code
-buildBtn.TextSize = 14
-buildBtn.BorderSizePixel = 0
-buildBtn.Parent = tab1
-
-buildBtn.MouseButton1Click:Connect(function()
-    builder.mode = "buildings"
-    if not builder.isDecor then
-        builder.width = tonumber(sizeBoxes[1].Text) or 7
-        builder.depth = tonumber(sizeBoxes[2].Text) or 7
-        builder.height = tonumber(sizeBoxes[3].Text) or 5
-    end
-    builder.rotation = 0
-    builder.baseY = 0
-    builder.active = true
-    updatePreview()
-    print("✅ "..builder.buildingType.." готов")
-    print("🖱️ Клик ЛКМ для постройки")
-end)
-
-local hint = Instance.new("TextLabel")
-hint.Size = UDim2.new(1, 0, 0, 40)
-hint.Position = UDim2.new(0, 0, 0, y + 50)
-hint.BackgroundTransparency = 1
-hint.Text = "R = поворот | Колесо = поворот\nShift+T = высота | Esc/ПКМ = отмена"
-hint.TextColor3 = Color3.fromRGB(150,150,150)
-hint.Font = Enum.Font.Code
-hint.TextSize = 11
-hint.TextXAlignment = Enum.TextXAlignment.Left
-hint.Parent = tab1
-
--- ============ ВКЛАДКА 2: АРТЫ ============
-local tab2 = Instance.new("Frame")
-tab2.Size = UDim2.new(1, 0, 1, 0)
-tab2.BackgroundTransparency = 1
-tab2.Visible = false
-tab2.Parent = content
-
-y = 5
-local artSizeW, artSizeH
-for i, lab in ipairs({"📐 Ширина:", "📏 Высота:"}) do
-    local l = Instance.new("TextLabel")
-    l.Size = UDim2.new(0, 80, 0, 20)
-    l.Position = UDim2.new(0, 0, 0, y + (i-1)*28)
-    l.BackgroundTransparency = 1
-    l.Text = lab
-    l.TextColor3 = Color3.new(1,1,1)
-    l.Font = Enum.Font.Code
-    l.TextSize = 12
-    l.TextXAlignment = Enum.TextXAlignment.Left
-    l.Parent = tab2
-
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0, 60, 0, 20)
-    box.Position = UDim2.new(0, 90, 0, y + (i-1)*28)
     box.Text = "10"
     box.BackgroundColor3 = Color3.fromRGB(10,10,15)
     box.TextColor3 = Color3.new(1,1,1)
     box.Font = Enum.Font.Code
     box.TextSize = 12
     box.BorderSizePixel = 0
-    box.Parent = tab2
+    box.Parent = tab1
     if i == 1 then artSizeW = box else artSizeH = box end
 end
 
@@ -1095,11 +528,11 @@ artLbl.TextColor3 = Color3.new(1,1,1)
 artLbl.Font = Enum.Font.Code
 artLbl.TextSize = 11
 artLbl.TextXAlignment = Enum.TextXAlignment.Left
-artLbl.Parent = tab2
+artLbl.Parent = tab1
 
 y = y + 22
 local artBox = Instance.new("TextBox")
-artBox.Size = UDim2.new(1, 0, 0, 300)
+artBox.Size = UDim2.new(1, 0, 0, 380)
 artBox.Position = UDim2.new(0, 0, 0, y)
 artBox.Text = "#FF0000 #00FF00 #0000FF #FFFF00 #FF00FF #00FFFF"
 artBox.BackgroundColor3 = Color3.fromRGB(10,10,15)
@@ -1111,9 +544,9 @@ artBox.MultiLine = true
 artBox.TextXAlignment = Enum.TextXAlignment.Left
 artBox.TextYAlignment = Enum.TextYAlignment.Top
 artBox.ClearTextOnFocus = false
-artBox.Parent = tab2
+artBox.Parent = tab1
 
-y = y + 310
+y = y + 390
 local artBtn = Instance.new("TextButton")
 artBtn.Size = UDim2.new(1, 0, 0, 40)
 artBtn.Position = UDim2.new(0, 0, 0, y)
@@ -1123,7 +556,7 @@ artBtn.TextColor3 = Color3.new(1,1,1)
 artBtn.Font = Enum.Font.Code
 artBtn.TextSize = 13
 artBtn.BorderSizePixel = 0
-artBtn.Parent = tab2
+artBtn.Parent = tab1
 
 artBtn.MouseButton1Click:Connect(function()
     builder.mode = "art"
@@ -1156,12 +589,101 @@ artBtn.MouseButton1Click:Connect(function()
     print("✅ Арт "..w.."x"..h.." готов")
 end)
 
+-- ============ ВКЛАДКА 2: 3D-СХЕМА ============
+local tab2 = Instance.new("Frame")
+tab2.Size = UDim2.new(1, 0, 1, 0)
+tab2.BackgroundTransparency = 1
+tab2.Visible = false
+tab2.Parent = content
+
+y = 5
+local schemaLbl = Instance.new("TextLabel")
+schemaLbl.Size = UDim2.new(1, 0, 0, 20)
+schemaLbl.Position = UDim2.new(0, 0, 0, y)
+schemaLbl.BackgroundTransparency = 1
+schemaLbl.Text = "📐 Схема (пустая строка = новый слой):"
+schemaLbl.TextColor3 = Color3.new(1,1,1)
+schemaLbl.Font = Enum.Font.Code
+schemaLbl.TextSize = 11
+schemaLbl.TextXAlignment = Enum.TextXAlignment.Left
+schemaLbl.Parent = tab2
+
+y = y + 22
+local schemaHelp = Instance.new("TextLabel")
+schemaHelp.Size = UDim2.new(1, 0, 0, 50)
+schemaHelp.Position = UDim2.new(0, 0, 0, y)
+schemaHelp.BackgroundTransparency = 1
+schemaHelp.Text = "Формат: brick#CC9966 glass#88DDFF door#AA7744 . (пусто)\nАлиасы: block, stair, slab, pane, door, pole, beam, chair, torch, glass...\nID: 43#CC9966 82#88DDFF 75#AA7744"
+schemaHelp.TextColor3 = Color3.fromRGB(150,150,150)
+schemaHelp.Font = Enum.Font.Code
+schemaHelp.TextSize = 9
+schemaHelp.TextXAlignment = Enum.TextXAlignment.Left
+schemaHelp.TextYAlignment = Enum.TextYAlignment.Top
+schemaHelp.Parent = tab2
+
+y = y + 55
+local schemaBox = Instance.new("TextBox")
+schemaBox.Size = UDim2.new(1, 0, 0, 375)
+schemaBox.Position = UDim2.new(0, 0, 0, y)
+schemaBox.Text = "brick#CC9966 brick#CC9966 brick#CC9966\nbrick#CC9966 glass#88DDFF brick#CC9966\nbrick#CC9966 door#AA7744 brick#CC9966\n\nbrick#CC9966 brick#CC9966 brick#CC9966\nbrick#CC9966 glass#88DDFF brick#CC9966\nbrick#CC9966 glass#88DDFF brick#CC9966\n\nslate#884422 slate#884422 slate#884422\nslate#884422 slate#884422 slate#884422\nslate#884422 slate#884422 slate#884422"
+schemaBox.BackgroundColor3 = Color3.fromRGB(10,10,15)
+schemaBox.TextColor3 = Color3.new(1,1,1)
+schemaBox.Font = Enum.Font.Code
+schemaBox.TextSize = 11
+schemaBox.BorderSizePixel = 0
+schemaBox.MultiLine = true
+schemaBox.TextXAlignment = Enum.TextXAlignment.Left
+schemaBox.TextYAlignment = Enum.TextYAlignment.Top
+schemaBox.ClearTextOnFocus = false
+schemaBox.Parent = tab2
+
+y = y + 385
+local schemaBtn = Instance.new("TextButton")
+schemaBtn.Size = UDim2.new(1, 0, 0, 40)
+schemaBtn.Position = UDim2.new(0, 0, 0, y)
+schemaBtn.Text = "📐 Построить схему"
+schemaBtn.BackgroundColor3 = Color3.fromRGB(50, 150, 200)
+schemaBtn.TextColor3 = Color3.new(1,1,1)
+schemaBtn.Font = Enum.Font.Code
+schemaBtn.TextSize = 13
+schemaBtn.BorderSizePixel = 0
+schemaBtn.Parent = tab2
+
+schemaBtn.MouseButton1Click:Connect(function()
+    builder.mode = "schema"
+    local text = schemaBox.Text
+    if text == "" then
+        print("❌ Схема пустая")
+        return
+    end
+    local layers = parseSchema(text)
+    if #layers == 0 then
+        print("❌ Не удалось распарсить схему")
+        return
+    end
+    builder.schemaData = layers
+    builder.rotation = 0
+    builder.baseY = 0
+    builder.active = true
+    updatePreview()
+
+    local total = 0
+    for _, layer in ipairs(layers) do
+        for _, row in ipairs(layer) do
+            for _, cell in ipairs(row) do
+                if cell ~= "." and cell ~= "" then total = total + 1 end
+            end
+        end
+    end
+    print(string.format("✅ Схема готова! Слоёв: %d, блоков: %d", #layers, total))
+end)
+
 tabBtn1.MouseButton1Click:Connect(function()
     tab1.Visible = true
     tab2.Visible = false
     tabBtn1.BackgroundColor3 = Color3.fromRGB(0,100,200)
     tabBtn2.BackgroundColor3 = Color3.fromRGB(60,60,60)
-    builder.mode = "buildings"
+    builder.mode = "art"
 end)
 
 tabBtn2.MouseButton1Click:Connect(function()
@@ -1169,7 +691,7 @@ tabBtn2.MouseButton1Click:Connect(function()
     tab2.Visible = true
     tabBtn1.BackgroundColor3 = Color3.fromRGB(60,60,60)
     tabBtn2.BackgroundColor3 = Color3.fromRGB(0,100,200)
-    builder.mode = "art"
+    builder.mode = "schema"
 end)
 
 UserInputService.InputBegan:Connect(function(input, gpe)
@@ -1195,4 +717,6 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
-print("🏗️ СТРОИТЕЛЬ v23.0 загружен!")
+print("🏗️ СТРОИТЕЛЬ v26.1 загружен! (фикс стёкол)")
+print("Алиасы: block, stair, slab, pane, door, pole, beam, chair, torch, glass...")
+print("Можно писать ID напрямую: 43#CC9966 82#88DDFF")
